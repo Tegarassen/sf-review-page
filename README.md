@@ -2,7 +2,7 @@
 
 SharinPix Salesforce review queue.
 
-GitHub Pages frontend + Supabase database, admin login, and Jira sync function.
+GitHub Pages frontend + Supabase database, private admin link, and Jira sync function.
 The team sees the saved order, SP ticket keys, short titles (100 characters maximum), Jira
 links, and GitHub PR links. These fields are intentionally public. Descriptions, comments,
 personal details, code, and integration credentials never enter the public database.
@@ -14,28 +14,39 @@ Conflicting edits cannot silently overwrite each other.
 
 ## 1. Create Supabase project
 
-Create `review-queue` at https://supabase.com/dashboard. Save the **database password** in a
-password manager. It is separate from your review-page admin password and never enters the browser.
+The `sf-review-page` project is already created. Save its **database password** in a
+password manager; it never enters the browser. Admin access uses a private link, not a password.
 
-In **SQL Editor**, run `supabase/migrations/202609180001_review_queue.sql` once. It creates
-the tables, row-level security, and functions. Alternatively use `supabase db push` after
-CLI login/link. Do not apply the SQL manually and then push that same migration without
-reconciling migration history.
+In **SQL Editor**, run both migrations in filename order:
 
-## 2. Create the admin account
+1. `supabase/migrations/202609180001_review_queue.sql`
+2. `supabase/migrations/202609180002_private_admin_link.sql`
 
-In **Authentication → Users → Add user → Create new user**, create your email/password
-account and mark it confirmed. This avoids needing outgoing email/SMTP for initial setup.
-Disable new public sign-ups in Auth settings. Run this in SQL Editor with your actual email:
+They create the public read-only queue and server-only writes. The current project
+`qcklvxtvoymwlbhppefn` already has both applied through the Management API. Do not run them
+again. CLI migration history is not populated by SQL Editor / Management API application;
+reconcile history before using `supabase db push` against this project.
 
-```sql
-insert into public.queue_admins (user_id)
-select id from auth.users where lower(email) = lower('YOUR_ADMIN_EMAIL')
-on conflict do nothing;
-```
+## 2. Private admin link — no account or password
 
-Verify the row appears in `queue_admins`. Do not put your password into SQL or source code.
-Other authenticated users cannot grant themselves access. Delete that row to revoke admin access.
+- Public: `https://tegarassen.github.io/sf-review-page/`
+- Private admin: the same URL with `?admin=YOUR_RANDOM_KEY`.
+
+The key is 32 random bytes, stored as `ADMIN_ACCESS_KEY` in Supabase Edge Function Secrets.
+It never appears in source code or the public build. Anyone holding the private link can
+edit priorities; keep it to yourself. The backend verifies the key on every write and sync.
+`?admin=true` alone grants no access. Public API users cannot call database write functions.
+
+On this computer the generated key is in `.env.admin` and the ready-to-use links are in
+`.private/admin-links.txt`. Both are excluded from Git and have restricted file permissions.
+The page removes the key from its address bar after opening and retains it only for that
+browser tab. Use the original saved private link to open another tab; reloading the current
+admin tab works. **Copy team link** always removes query parameters. **Exit admin view** clears
+that tab's key. The page sends no referrer to Jira/GitHub links.
+
+To rotate access, generate a new random key, replace `ADMIN_ACCESS_KEY` in Supabase Secrets,
+and update your saved private link. Old links stop working on their next backend request.
+Never use your Jira token as the admin key.
 
 ## 3. Deploy the Jira sync function
 
@@ -44,13 +55,13 @@ From this directory:
 ```sh
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
-supabase functions deploy sync-jira --use-api
+supabase functions deploy sync-jira admin-queue --use-api
 ```
 
 The CLI is already installed on this computer. `--use-api` bundles remotely without Docker.
 Gateway JWT verification is disabled in config because the function supports either an
-admin session or a scheduler credential. The function itself **always validates admin
-membership or the scheduler secret** before making Jira requests.
+private admin key or a scheduler credential. The function itself **always validates the
+admin key or scheduler secret** before making Jira requests.
 
 In Supabase **Edge Functions → Secrets**, add:
 
@@ -115,24 +126,22 @@ cp .env.example .env
 npm run dev
 ```
 
-Without configuration the app shows a setup screen. `?demo` shows fictional tickets and
+The checked-in public configuration connects the app. `?demo` shows fictional tickets and
 local-only ordering controls. For local admin sync, temporarily omit `ALLOWED_ORIGIN` or use
 the local origin.
 
-Push this directory to your repository's `main` branch. Under **Settings → Secrets and
-variables → Actions → Variables**, set these two **public** variables:
+The public Supabase URL and publishable key are already in `public-config.json`. These
+are intended for browser use and do not grant write access. Optional GitHub repository
+variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` can override them.
 
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY`
+Push this directory to `main`. Under **Settings → Pages**, choose **GitHub Actions** as the
+build source. The included workflow tests, builds, and deploys only the frontend. GitHub does
+not need the Jira token or admin key. Private repos need a plan supporting GitHub Pages for
+private repositories. This minimal page and its data are intentionally public.
 
-Under **Settings → Pages**, choose **GitHub Actions** as the build source. The included
-workflow tests, builds, and deploys the frontend only. Jira sync runs entirely in Supabase;
-GitHub does not need your Jira token. Private repositories need a GitHub plan supporting
-Pages for private repositories. This minimal page and its data are intentionally public.
-
-Sign in as admin, **Sync Jira**, reorder, **Save order**, then **Copy team link**. Teammates
-use their existing Jira/GitHub access when opening links. Truncation is not redaction:
-the first 100 characters of each Jira title are public.
+Open your private admin link, **Sync Jira**, reorder, **Save order**, then **Copy team link**.
+Teammates use their existing Jira/GitHub permissions when opening tickets and PRs. Truncation
+is not redaction: the first 100 characters of each Jira title are public.
 
 ## 5. Optional automatic sync
 
@@ -147,7 +156,7 @@ sync and warns when it is over 45 minutes old. Inspect Cron and function logs fo
 
 ## Validation and limits
 
-`npm test` checks permissions, unauthorized writes, stale edits, atomic saves, sync behavior,
+`npm test` checks private-link authentication, permissions, unauthorized writes, stale edits, atomic saves, sync behavior,
 PR overrides, pagination, and data minimization using PGlite and mocked providers.
 `npm run build` produces `dist/`. `node tests/browser.mjs` tests the browser against a mocked
 Supabase API with Vite running (test environment values are at the top of that file).

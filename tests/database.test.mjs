@@ -11,7 +11,7 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
   const db = new PGlite();
   try {
     await db.exec(`
-      create role anon; create role authenticated; create role service_role;
+      create role anon; create role authenticated; create role service_role bypassrls;
       -- Older hosted projects grant execute to API roles through default privileges.
       alter default privileges in schema public grant execute on functions to anon, authenticated;
       create schema auth; create table auth.users(id uuid primary key);
@@ -22,7 +22,7 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
       insert into auth.users values ('${adminId}'), ('${memberId}');
     `);
     await db.exec(await readFile(new URL('../supabase/migrations/202609180001_review_queue.sql', import.meta.url), 'utf8'));
-    await db.query('insert into public.queue_admins values ($1)', [adminId]);
+    await db.exec(await readFile(new URL('../supabase/migrations/202609180002_private_admin_link.sql', import.meta.url), 'utf8'));
     const sync = items => db.query('select public.sync_review_queue($1::jsonb)', [JSON.stringify(items)]);
     const snapshot = async () => (await db.query('select public.get_queue() as queue')).rows[0].queue;
     const role = async (name, id = '') => { await db.exec('reset role'); await db.query("select set_config('request.jwt.claim.sub', $1, false)", [id]); await db.exec(`set role ${name}`); };
@@ -37,17 +37,13 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
     await role('anon');
     assert.deepEqual((await snapshot()).tickets.map(t => t.ticket_key), ['SP-1', 'SP-2']);
     await assert.rejects(db.exec("update public.review_tickets set position = 99"), /permission denied/);
-    await assert.rejects(db.exec('select * from public.queue_admins'), /permission denied/);
     await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-2', 'SP-1'], 1]), /permission denied/);
     await assert.rejects(sync([]), /permission denied/);
     await assert.rejects(db.query('select public.claim_sync()'), /permission denied/);
     await role('authenticated', memberId);
-    assert.equal((await db.exec('select * from public.queue_admins'))[0].rows.length, 0);
-    await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-2', 'SP-1'], 1]), /Admin access required/);
-    await assert.rejects(db.query('insert into public.queue_admins values ($1)', [memberId]), /permission denied/);
+    await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-2', 'SP-1'], 1]), /permission denied/);
     await assert.rejects(sync([]), /permission denied/);
-    await role('authenticated', adminId);
-    assert.equal((await db.exec('select * from public.queue_admins'))[0].rows.length, 1);
+    await role('service_role');
     await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-1', 'SP-1'], 1]), /exactly once/);
     await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-1'], 1]), /exactly once/);
     await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-1', null], 1]), /exactly once/);
@@ -63,7 +59,7 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
     assert.deepEqual(queue.tickets.map(t => t.ticket_key), ['SP-2', 'SP-1', 'SP-3']);
     assert.deepEqual(queue.tickets[0].pr_urls, ['https://github.com/example/repo/pull/5']);
     assert.equal(Object.hasOwn(queue.tickets[0], 'manual_pr_urls'), false);
-    await role('authenticated', adminId);
+    await role('service_role');
     await db.query('select public.set_pr_links($1, $2, $3)', ['SP-2', null, queue.revision]);
     assert.deepEqual((await snapshot()).tickets[0].pr_urls, ['https://github.com/example/repo/pull/6']);
     await role('service_role');

@@ -21,11 +21,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Check public configuration
-        run: node -e 'if (!process.env.VITE_SUPABASE_URL || !process.env.VITE_SUPABASE_PUBLISHABLE_KEY) throw new Error("Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY repository variables")'
-        env:
-          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}

@@ -18,5 +18,8 @@ site_url = "http://localhost:5173"
 enable_signup = false
 
 [functions.sync-jira]
-# index.ts verifies admin JWTs or a dedicated scheduler secret itself.
+# The function verifies the private admin link or a dedicated scheduler secret itself.
+verify_jwt = false
+
+[functions.admin-queue]
 verify_jwt = false
