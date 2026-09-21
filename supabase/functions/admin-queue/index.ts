@@ -1,4 +1,5 @@
 import { cors, json, matchesSecret, serviceConfig } from '../_shared/access.ts';
+import { inspectBoardStatuses } from '../_shared/sync.mjs';
 
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -11,6 +12,10 @@ Deno.serve(async req => {
     if (raw.length > 65536) return json({ error: 'Request too large' }, 413);
     const body = JSON.parse(raw || '{}');
     if (body.action === 'verify') return json({ admin: true });
+    if (body.action === 'inspect_jira_statuses') {
+      try { return json(await inspectBoardStatuses(Deno.env.toObject())); }
+      catch (error) { return json({ error: error instanceof Error ? error.message : 'Could not inspect board statuses.' }, 502); }
+    }
     if (!Number.isSafeInteger(body.expected_revision) || body.expected_revision < 0) return json({ error: 'Invalid revision' }, 400);
     let rpc: string, args: Record<string, unknown>;
     if (body.action === 'save_order') {

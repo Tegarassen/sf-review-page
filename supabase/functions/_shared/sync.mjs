@@ -21,11 +21,11 @@ export async function requestJson(url, options = {}, fetcher = fetch) {
   }
 }
 
-export async function getBoardIssues(jira, base, boardId, statusIds) {
+export async function getBoardIssues(jira, base, boardId, statusIds, fields = 'summary,status,priority,created') {
   const issues = []; const seen = new Set(); let pageToken;
   for (let page = 0; page < 1000; page++) {
-    const params = new URLSearchParams({ maxResults: '100', fields: 'summary,status,priority,created',
-      jql: `project = SP AND status in (${statusIds.join(',')}) ORDER BY priority DESC, created ASC` });
+    const params = new URLSearchParams({ maxResults: '100', fields,
+      jql: statusIds ? `project = SP AND status in (${statusIds.join(',')}) ORDER BY priority DESC, created ASC` : 'project = SP' });
     if (pageToken) params.set('nextPageToken', pageToken);
     const result = await jira(`${base}/rest/software/1.0/board/${boardId}/issue?${params}`);
     if (!Array.isArray(result.issues)) throw new Error('Invalid Jira issue response. Existing queue was not changed.');
@@ -40,8 +40,8 @@ export async function getBoardIssues(jira, base, boardId, statusIds) {
   throw new Error('Jira page limit exceeded. Existing queue was not changed.');
 }
 
-export async function runSync(env, fetcher = fetch) {
-  const required = ['JIRA_EMAIL', 'JIRA_API_TOKEN', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY'];
+function jiraConnection(env, fetcher) {
+  const required = ['JIRA_EMAIL', 'JIRA_API_TOKEN'];
   for (const name of required) if (!env[name]) throw new Error(`Missing ${name}.`);
   const site = (env.JIRA_SITE || 'https://sharinpix.atlassian.net').replace(/\/$/, '');
   if (site !== 'https://sharinpix.atlassian.net') throw new Error('This app is configured for sharinpix.atlassian.net only.');
@@ -52,6 +52,27 @@ export async function runSync(env, fetcher = fetch) {
   if (!/^\d+$/.test(boardId)) throw new Error('Invalid JIRA_BOARD_ID.');
   const authorization = `Basic ${Buffer.from(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`).toString('base64')}`;
   const jira = address => requestJson(address, { headers: { authorization, accept: 'application/json' } }, fetcher);
+  return { site, base, boardId, jira };
+}
+
+export async function inspectBoardStatuses(env, fetcher = fetch) {
+  const { base, boardId, jira } = jiraConnection(env, fetcher);
+  const board = await jira(`${base}/rest/agile/1.0/board/${boardId}`);
+  if (String(board.id) !== boardId) throw new Error('Could not verify Jira board access.');
+  const issues = await getBoardIssues(jira, base, boardId, null, 'status');
+  const statuses = new Map();
+  for (const issue of issues) {
+    const status = issue.fields?.status;
+    if (!/^SP-\d+$/.test(issue.key) || !status || !/^\d+$/.test(String(status.id))) throw new Error('Unexpected Jira issue status.');
+    const row = statuses.get(status.id) || { id: String(status.id), name: status.name, count: 0, ticket_keys: [] };
+    row.count++; row.ticket_keys.push(issue.key); statuses.set(status.id, row);
+  }
+  return { board_id: boardId, statuses: [...statuses.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+export async function runSync(env, fetcher = fetch) {
+  for (const name of ['SUPABASE_URL', 'SUPABASE_SECRET_KEY']) if (!env[name]) throw new Error(`Missing ${name}.`);
+  const { site, base, boardId, jira } = jiraConnection(env, fetcher);
   // Verify board access explicitly. Some issue endpoints return an empty list without board access.
   const board = await jira(`${base}/rest/agile/1.0/board/${boardId}`);
   if (String(board.id) !== boardId) throw new Error('Could not verify Jira board access.');
@@ -59,7 +80,7 @@ export async function runSync(env, fetcher = fetch) {
   if (!statusIds.length) {
     let configuration;
     try { configuration = await jira(`${base}/rest/agile/1.0/board/${boardId}/configuration`); }
-    catch { throw new Error('Cannot read board column mapping. Add read:board-scope.admin:jira-software and read:project:jira scopes, or set verified JIRA_REVIEW_STATUS_IDS. Existing queue was not changed.'); }
+    catch { throw new Error('Your token can read tickets, but REVIEW status IDs still need configuration. Set JIRA_REVIEW_STATUS_IDS in Supabase Secrets to the verified statuses used by the REVIEW column. Existing queue was not changed.'); }
     const column = configuration.columnConfig?.columns?.find(c => c.name.toLowerCase() === (env.JIRA_REVIEW_COLUMN || 'REVIEW').toLowerCase());
     statusIds = (column?.statuses || []).map(s => String(s.id));
   }

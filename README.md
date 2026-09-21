@@ -81,6 +81,12 @@ Ticket-read scopes:
 - `read:board-scope:jira-software`
 - `read:issue-details:jira`
 
+This project's verified **Review** status is `10136`, configured in Supabase as
+`JIRA_REVIEW_STATUS_IDS=10136`. With that setting, the app skips the board configuration
+request and these two ticket-read scopes are sufficient. It selects all matching Review
+tickets on board 45; browser-only quick filters or active-sprint selections need to be
+matched separately if you want the same subset as the Jira screen.
+
 Automatic column-to-status mapping additionally needs:
 
 - `read:board-scope.admin:jira-software`
