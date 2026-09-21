@@ -21,11 +21,11 @@ export async function requestJson(url, options = {}, fetcher = fetch) {
   }
 }
 
-export async function getBoardIssues(jira, base, boardId, statusIds, fields = 'summary,status,priority,created') {
+export async function getBoardIssues(jira, base, boardId, statusIds, fields = 'summary,status,priority,created', hideReleased = false) {
   const issues = []; const seen = new Set(); let pageToken;
   for (let page = 0; page < 1000; page++) {
     const params = new URLSearchParams({ maxResults: '100', fields,
-      jql: statusIds ? `project = SP AND status in (${statusIds.join(',')}) ORDER BY priority DESC, created ASC` : 'project = SP' });
+      jql: statusIds ? `project = SP AND status in (${statusIds.join(',')})${hideReleased ? ' AND (fixVersion in unreleasedVersions() OR fixVersion is EMPTY)' : ''} ORDER BY priority DESC, created ASC` : 'project = SP' });
     if (pageToken) params.set('nextPageToken', pageToken);
     const result = await jira(`${base}/rest/software/1.0/board/${boardId}/issue?${params}`);
     if (!Array.isArray(result.issues)) throw new Error('Invalid Jira issue response. Existing queue was not changed.');
@@ -70,6 +70,58 @@ export async function inspectBoardStatuses(env, fetcher = fetch) {
   return { board_id: boardId, statuses: [...statuses.values()].sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
+async function jiraPrUrls(jira, base, issueId) {
+  if (!/^\d+$/.test(String(issueId))) throw new Error('Invalid issue ID.');
+  const summary = await jira(`${base}/rest/dev-status/latest/issue/summary?issueId=${issueId}`);
+  if (summary.errors?.length || !summary.summary?.pullrequest) throw new Error('Development summary unavailable.');
+  const types = Object.keys(summary.summary.pullrequest.byInstanceType || {});
+  const developmentUrls = [];
+  for (const type of types) {
+    const params = new URLSearchParams({ issueId: issueId, applicationType: type, dataType: 'pullrequest' });
+    const details = await jira(`${base}/rest/dev-status/latest/issue/detail?${params}`);
+    if (details.errors?.length || !Array.isArray(details.detail)) throw new Error('Development detail unavailable.');
+    for (const detail of details.detail) for (const pr of detail.pullRequests || []) {
+      if (pr.status === 'OPEN' && validPrUrl(pr.url)) developmentUrls.push(pr.url);
+    }
+  }
+  return [...new Set(developmentUrls)].slice(0, 20);
+}
+
+export async function inspectReviewScope(env, fetcher = fetch, inspectPrs = false) {
+  const { base, boardId, jira } = jiraConnection(env, fetcher);
+  const board = await jira(`${base}/rest/agile/1.0/board/${boardId}`);
+  if (String(board.id) !== boardId) throw new Error('Could not verify Jira board access.');
+  const statusIds = (env.JIRA_REVIEW_STATUS_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!statusIds.length || statusIds.some(s => !/^\d+$/.test(s))) throw new Error('No valid REVIEW status IDs.');
+  const fields = `status,resolution,fixVersions,sprint${inspectPrs ? ',description' : ''}`;
+  const issues = await getBoardIssues(jira, base, boardId, statusIds, fields, env.JIRA_HIDE_RELEASED === 'true');
+  const prs = {};
+  if (inspectPrs) {
+    if (issues.length > 50) throw new Error('Narrow the review query before inspecting PRs.');
+    for (const issue of issues) {
+      try { prs[issue.key] = { urls: await jiraPrUrls(jira, base, issue.id) }; }
+      catch (error) { prs[issue.key] = { error: error.message }; }
+      const descriptionLinks = JSON.stringify(issue.fields?.description || '').match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+\b/g) || [];
+      prs[issue.key].description_urls = [...new Set(descriptionLinks)].slice(0, 20);
+      try {
+        const links = await jira(`${base}/rest/api/3/issue/${encodeURIComponent(issue.key)}/remotelink`);
+        prs[issue.key].remote_urls = [...new Set(links.map(link => link.object?.url).filter(validPrUrl))].slice(0, 20);
+      } catch (error) { prs[issue.key].remote_error = error.message; }
+    }
+  }
+  return {
+    board: { id: boardId, name: board.name, type: board.type },
+    prs,
+    pr_sources: { github: Boolean(env.GH_READ_TOKEN && env.GH_REPOSITORIES), jira: env.JIRA_DEV_STATUS === 'true' },
+    tickets: issues.map(issue => ({
+      key: issue.key, status_id: String(issue.fields?.status?.id),
+      resolved: Boolean(issue.fields?.resolution),
+      versions: (issue.fields?.fixVersions || []).map(version => ({ released: version.released, archived: version.archived })),
+      sprint_state: issue.fields?.sprint?.state || null,
+    })),
+  };
+}
+
 export async function runSync(env, fetcher = fetch) {
   for (const name of ['SUPABASE_URL', 'SUPABASE_SECRET_KEY']) if (!env[name]) throw new Error(`Missing ${name}.`);
   const { site, base, boardId, jira } = jiraConnection(env, fetcher);
@@ -85,7 +137,7 @@ export async function runSync(env, fetcher = fetch) {
     statusIds = (column?.statuses || []).map(s => String(s.id));
   }
   if (!statusIds.length || statusIds.some(s => !/^\d+$/.test(s))) throw new Error('No valid REVIEW status IDs. Existing queue was not changed.');
-  const issues = await getBoardIssues(jira, base, boardId, statusIds);
+  const issues = await getBoardIssues(jira, base, boardId, statusIds, undefined, env.JIRA_HIDE_RELEASED === 'true');
   if (issues.some(i => !/^SP-\d+$/.test(i.key) || !statusIds.includes(String(i.fields?.status?.id)))) throw new Error('Jira returned issues outside the configured queue.');
   if (new Set(issues.map(i => i.key)).size !== issues.length) throw new Error('Jira returned duplicate tickets. Existing queue was not changed.');
 
@@ -114,19 +166,7 @@ export async function runSync(env, fetcher = fetch) {
     if (env.JIRA_DEV_STATUS === 'true') {
       // Explicit opt-in: this is Jira's internal API and may be blocked or change without notice.
       try {
-        if (!/^\d+$/.test(String(issue.id))) throw new Error('Invalid issue ID.');
-        const summary = await jira(`${base}/rest/dev-status/latest/issue/summary?issueId=${issue.id}`);
-        if (summary.errors?.length || !summary.summary?.pullrequest) throw new Error('Development summary unavailable.');
-        const types = Object.keys(summary.summary.pullrequest.byInstanceType || {});
-        const developmentUrls = [];
-        for (const type of types) {
-          const params = new URLSearchParams({ issueId: issue.id, applicationType: type, dataType: 'pullrequest' });
-          const details = await jira(`${base}/rest/dev-status/latest/issue/detail?${params}`);
-          if (details.errors?.length || !Array.isArray(details.detail)) throw new Error('Development detail unavailable.');
-          for (const detail of details.detail) for (const pr of detail.pullRequests || []) {
-            if (pr.status === 'OPEN' && validPrUrl(pr.url)) developmentUrls.push(pr.url);
-          }
-        }
+        const developmentUrls = await jiraPrUrls(jira, base, issue.id);
         urls = [...new Set([...(urls || []), ...developmentUrls])].slice(0, 20);
       } catch { prLookupFailures++; }
     }

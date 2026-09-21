@@ -1,5 +1,5 @@
 import { cors, json, matchesSecret, serviceConfig } from '../_shared/access.ts';
-import { inspectBoardStatuses } from '../_shared/sync.mjs';
+import { inspectBoardStatuses, inspectReviewScope } from '../_shared/sync.mjs';
 
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -12,6 +12,10 @@ Deno.serve(async req => {
     if (raw.length > 65536) return json({ error: 'Request too large' }, 413);
     const body = JSON.parse(raw || '{}');
     if (body.action === 'verify') return json({ admin: true });
+    if (body.action === 'inspect_review_scope') {
+      try { return json(await inspectReviewScope(Deno.env.toObject(), fetch, body.inspect_prs === true)); }
+      catch (error) { return json({ error: error instanceof Error ? error.message : 'Could not inspect review scope.' }, 502); }
+    }
     if (body.action === 'inspect_jira_statuses') {
       try { return json(await inspectBoardStatuses(Deno.env.toObject())); }
       catch (error) { return json({ error: error instanceof Error ? error.message : 'Could not inspect board statuses.' }, 502); }

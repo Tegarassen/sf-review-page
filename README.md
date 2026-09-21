@@ -83,9 +83,19 @@ Ticket-read scopes:
 
 This project's verified **Review** status is `10136`, configured in Supabase as
 `JIRA_REVIEW_STATUS_IDS=10136`. With that setting, the app skips the board configuration
-request and these two ticket-read scopes are sufficient. It selects all matching Review
-tickets on board 45; browser-only quick filters or active-sprint selections need to be
-matched separately if you want the same subset as the Jira screen.
+request and these two ticket-read scopes are sufficient for ticket sync.
+`JIRA_HIDE_RELEASED=true` also applies the Salesforce Kanban release filter:
+`fixVersion in unreleasedVersions() OR fixVersion is EMPTY`. Without this filter, the API
+includes older Review tickets belonging only to released versions. The five remaining
+ticket keys were confirmed against the Salesforce board. Other browser quick filters
+are not applied automatically.
+
+The protected `admin-queue` action `inspect_review_scope` checks board identity, ticket
+keys and release flags without publishing titles or changing the queue. With
+`inspect_prs: true`, it also attempts to read Jira Development PR links for up to 50
+matching tickets, including ordinary remote links and PR URLs in descriptions. Only
+matching GitHub PR URLs are returned; descriptions are never stored in the public queue.
+This diagnostic requires the private admin key.
 
 Automatic column-to-status mapping additionally needs:
 
@@ -168,8 +178,10 @@ PR overrides, pagination, and data minimization using PGlite and mocked provider
 Supabase API with Vite running (test environment values are at the top of that file).
 It uses installed Chrome or Playwright Chromium.
 
-Live Jira/Supabase sync still needs credentials and cannot be verified by offline tests.
-This version handles one small board. Other boards, GitHub Enterprise hosts, or private
+Live ticket sync has been verified against the five user-confirmed Salesforce Review
+tickets. The current scoped Jira token returns HTTP 401 for Development and remote-link
+lookups; none of the five descriptions contains a GitHub PR URL. PR retrieval is still
+blocked on API access and has not been verified. This version handles one small board. Other boards, GitHub Enterprise hosts, or private
 team viewing would require extending the configuration and policies.
 
 References: [Supabase keys](https://supabase.com/docs/guides/getting-started/api-keys),

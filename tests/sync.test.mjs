@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getBoardIssues, inspectBoardStatuses, matchPrs, runSync, shortTitle } from '../supabase/functions/_shared/sync.mjs';
+import { getBoardIssues, inspectBoardStatuses, inspectReviewScope, matchPrs, runSync, shortTitle } from '../supabase/functions/_shared/sync.mjs';
 
 test('PR matching respects issue-key boundaries and rejects unsafe URLs', () => {
   const prs = [
@@ -27,6 +27,22 @@ test('Jira pagination reads every page and rejects repeated or incomplete pages'
 const env = { JIRA_EMAIL: 'test@example.com', JIRA_API_TOKEN: 'test-token', JIRA_CLOUD_ID: 'test-cloud',
   JIRA_REVIEW_STATUS_IDS: '7', SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SECRET_KEY: 'test-secret' };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+test('Review scope diagnostics request only filtering fields and never publish tickets or credentials', async () => {
+  const result = await inspectReviewScope(env, async (url, options) => {
+    assert.equal(options.method, undefined);
+    if (url.endsWith('/board/45')) return response({ id: 45, name: 'Salesforce', type: 'kanban' });
+    const params = new URL(url).searchParams;
+    assert.equal(params.get('fields'), 'status,resolution,fixVersions,sprint');
+    assert.match(params.get('jql'), /status in \(7\)/);
+    return response({ isLast: true, issues: [{ key: 'SP-1', fields: {
+      summary: 'PRIVATE TITLE', status: { id: '7' }, resolution: null,
+      fixVersions: [{ name: 'PRIVATE RELEASE', released: true, archived: false }],
+    } }] });
+  });
+  assert.deepEqual(result.tickets, [{ key: 'SP-1', status_id: '7', resolved: false,
+    versions: [{ released: true, archived: false }], sprint_state: null }]);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE|test-token/);
+});
 test('Status inspection uses only board reads, returns status IDs, and never reads configuration or writes', async () => {
   const result = await inspectBoardStatuses(env, async (url, options) => {
     assert.equal(options.method, undefined);
@@ -67,6 +83,28 @@ test('Failed Jira fetch never replaces the saved queue', async () => {
     return response({ error: 'denied' }, 403);
   }), /HTTP 403/);
   assert.equal(wrote, false);
+});
+test('Kanban sync includes the release subfilter on every page and uses only open Jira PR links', async () => {
+  let payload;
+  const result = await runSync({ ...env, JIRA_HIDE_RELEASED: 'true', JIRA_DEV_STATUS: 'true' }, async (url, options) => {
+    if (url.endsWith('/board/45')) return response({ id: 45 });
+    if (url.includes('/rest/software/')) {
+      const params = new URL(url).searchParams;
+      assert.equal(params.get('jql'), 'project = SP AND status in (7) AND (fixVersion in unreleasedVersions() OR fixVersion is EMPTY) ORDER BY priority DESC, created ASC');
+      if (!params.has('nextPageToken')) return response({ issues: [], nextPageToken: 'next' });
+      return response({ isLast: true, issues: [{ id: '123', key: 'SP-1', fields: { summary: 'Review', status: { id: '7' } } }] });
+    }
+    if (url.includes('/issue/summary')) return response({ summary: { pullrequest: { byInstanceType: { GitHub: {} } } } });
+    if (url.includes('/issue/detail')) return response({ detail: [{ pullRequests: [
+      { status: 'OPEN', url: 'https://github.com/example/repo/pull/1' },
+      { status: 'MERGED', url: 'https://github.com/example/repo/pull/2' },
+      { status: 'OPEN', url: 'javascript:alert(1)' },
+    ] }] });
+    if (url.endsWith('/rpc/sync_review_queue')) { payload = JSON.parse(options.body); return response(null); }
+    throw new Error('Unexpected request');
+  });
+  assert.deepEqual(payload.items[0].pr_urls, ['https://github.com/example/repo/pull/1']);
+  assert.equal(result.prLookupFailures, 0);
 });
 test('Missing column mapping fails instead of guessing a similarly named Jira status', async () => {
   await assert.rejects(runSync({ ...env, JIRA_REVIEW_STATUS_IDS: '' }, async url => {
