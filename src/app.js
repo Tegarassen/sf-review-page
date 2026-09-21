@@ -31,7 +31,7 @@ const demoTickets = [
 ].map(([ticket_key, short_title], i) => ({ ticket_key, short_title, position: i + 1, jira_url: '', pr_urls: [] }));
 
 $('#app').innerHTML = `
-  <header class="topbar"><div class="brand"><span class="brand-mark">S</span> SharinPix <span class="brand-divider">/</span> <span class="brand-sub">Engineering</span></div><div class="top-actions"><span class="live-dot"></span><span>Salesforce team</span><button id="signout" class="button subtle" hidden>Exit admin view</button></div></header>
+  <header class="topbar"><div class="brand"><span class="brand-mark">S</span> SharinPix <span class="brand-divider">/</span> <span class="brand-sub">Engineering</span></div><div class="top-actions"><span class="live-dot"></span><span id="view-label">Public view</span><button id="signout" class="button subtle" hidden>Exit admin view</button></div></header>
   <main>
     <div class="eyebrow">THE REVIEW DESK <span>BOARD 45</span></div>
     <section class="heading"><div><h1>A little order.<br><span>A faster review.</span></h1><p>One shared queue. Start at the top and work your way down.</p></div><button id="share" class="button">Copy team link <span aria-hidden="true">↗</span></button></section>
@@ -61,6 +61,7 @@ function render() {
   $('#count').textContent = String(tickets.length).padStart(2, '0');
   $('#badge').textContent = tickets.length;
   $('#synced').textContent = demo ? 'Sample data' : lastSynced ? new Date(lastSynced).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not synced yet';
+  $('#view-label').textContent = demo ? 'Demo view' : admin ? 'Admin view' : 'Public view';
   $('#admin-toolbar').hidden = !admin;
   $('#signout').hidden = !admin || demo;
   $('#save').disabled = !dirty || busy;
@@ -73,7 +74,9 @@ function render() {
       <div class="ticket-info"><div class="ticket-meta">${safeLink(t.jira_url, 'jira') ? `<a href="${escape(t.jira_url)}" target="_blank" rel="noopener noreferrer">${escape(t.ticket_key)} ↗</a>` : `<span>${escape(t.ticket_key)}</span>`}${i === 0 ? '<span class="next-badge">UP NEXT</span>' : ''}</div><h3>${escape(t.short_title)}</h3></div>
       <div class="pr-links">${t.pr_urls.filter(u => safeLink(u, 'pr')).map((u, n) => `<a class="pr-link" href="${escape(u)}" target="_blank" rel="noopener noreferrer">PR #${escape(u.split('/').pop())} ↗</a>`).join('') || '<span class="muted">PR link pending</span>'}${admin ? `<button class="text-button" data-links="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>Edit links</button>` : ''}</div>
       <div class="move-controls">${admin ? `<button class="move" data-move="-1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} up" ${i === 0 || busy ? 'disabled' : ''}>↑</button><button class="move" data-move="1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} down" ${i === tickets.length - 1 || busy ? 'disabled' : ''}>↓</button>` : ''}</div>
-    </article>`).join('') : '<div class="empty"><span class="empty-symbol">✓</span><h3>No tickets waiting</h3><p>Tickets will appear here after Jira syncs the REVIEW column.</p></div>';
+    </article>`).join('') : lastSynced
+    ? '<div class="empty"><span class="empty-symbol">✓</span><h3>No tickets waiting</h3><p>No tickets were in the review queue at the last successful sync.</p></div>'
+    : `<div class="empty"><h3>Jira hasn’t synced yet</h3><p>${admin ? 'Use Sync Jira above to load the review queue.' : 'The queue will appear after the admin syncs Jira. To sync or change priorities, open your private admin link.'}</p></div>`;
 }
 async function adminCall(action, args = {}) {
   const { data, error } = await client.functions.invoke('admin-queue', {
