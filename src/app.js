@@ -31,19 +31,19 @@ const demoTickets = [
 ].map(([ticket_key, short_title], i) => ({ ticket_key, short_title, position: i + 1, jira_url: '', pr_urls: [] }));
 
 $('#app').innerHTML = `
-  <header class="topbar"><div class="brand"><span class="brand-mark">S</span> SharinPix <span class="brand-divider">/</span> <span class="brand-sub">Engineering</span></div><div class="top-actions"><span class="live-dot"></span><span id="view-label">Public view</span><button id="signout" class="button subtle" hidden>Exit admin view</button></div></header>
+  <header class="topbar"><div class="brand"><img class="brand-logo" src="./sharinpix-logo.png" alt="SharinPix" width="150" height="66"><span class="brand-divider"></span> <span class="brand-sub">Engineering</span></div><div class="top-actions"><span class="live-dot"></span><span id="view-label">Public view</span><button id="signout" class="button subtle" hidden>Exit admin view</button></div></header>
   <main>
-    <div class="eyebrow">THE REVIEW DESK <span>BOARD 45</span></div>
-    <section class="heading"><div><h1>A little order.<br><span>A faster review.</span></h1><p>One shared queue. Start at the top and work your way down.</p></div><button id="share" class="button">Copy team link <span aria-hidden="true">↗</span></button></section>
+    <div class="eyebrow">SALESFORCE TEAM <span>CODE REVIEW</span></div>
+    <section class="heading"><div><h1>Review priorities</h1><p>Your team’s pull requests, in the order that matters.</p></div><button id="share" class="button share-button">Copy team link <span aria-hidden="true">↗</span></button></section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
-    <section class="summary" aria-label="Queue overview"><div><span class="summary-label">WAITING FOR REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
+    <section class="summary" aria-label="Queue overview"><div><span class="summary-label">TICKETS IN REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
     <section class="queue"><div class="queue-heading"><div><span class="tab-dot"></span><h2>Review queue</h2><span id="badge">0</span></div><button id="reload" class="button subtle">Refresh</button></div>
       <div id="admin-toolbar" hidden><p>Drag rows or use the arrows, then save the order for everyone.</p><div><button id="sync" class="button subtle">Sync Jira</button><button id="discard" class="button subtle" disabled>Discard changes</button><button id="save" class="button primary" disabled>Save order</button></div></div>
       <div class="table-head"><span>ORDER</span><span>TICKET</span><span>PULL REQUESTS</span><span></span></div>
       <div id="rows" aria-label="Tickets in review order"><div class="empty">Loading the review queue…</div></div>
       <footer class="queue-footer"><span>Review from top to bottom.</span><span>Jira · SP / REVIEW</span></footer>
     </section>
-    <footer class="page-footer"><span>Small queue. Clear priorities.</span><span>Ticket details and code remain in Jira and GitHub.</span></footer>
+    <footer class="page-footer"><span>SharinPix · Salesforce engineering</span><span>Ticket details and code remain in Jira and GitHub.</span></footer>
   </main>
   <dialog id="links-dialog"><form id="links-form"><div class="dialog-heading"><h2 id="links-title">PR links</h2><button type="button" class="button subtle" data-close="links-dialog" aria-label="Close">×</button></div><p>Paste one GitHub pull request URL per line. These links stay saved when Jira refreshes.</p><label>Pull request links<textarea id="pr-input" rows="5" placeholder="https://github.com/team/repo/pull/123"></textarea></label><p id="links-error" role="alert"></p><div class="dialog-actions"><button type="button" id="auto-links" class="button">Use synced links</button><button type="submit" class="button primary">Save links</button></div></form></dialog>
 `;
@@ -58,7 +58,7 @@ function safeLink(href, kind) {
     : /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/.test(href);
 }
 function render() {
-  $('#count').textContent = String(tickets.length).padStart(2, '0');
+  $('#count').textContent = !lastSynced && !tickets.length && !demo ? '—' : String(tickets.length).padStart(2, '0');
   $('#badge').textContent = tickets.length;
   $('#synced').textContent = demo ? 'Sample data' : lastSynced ? new Date(lastSynced).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not synced yet';
   $('#view-label').textContent = demo ? 'Demo view' : admin ? 'Admin view' : 'Public view';

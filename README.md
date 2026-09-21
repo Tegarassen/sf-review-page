@@ -113,6 +113,15 @@ the built-in `SUPABASE_` keys; do not set those manually or put them in frontend
 
 ### GitHub PR links
 
+Keep the existing scoped Jira token for ticket reads. There is no documented selectable
+scope for the internal `/rest/dev-status/` endpoint. `read:dev-info:jira` is documented
+for a separate repository development-information API, not this per-issue panel lookup.
+Atlassian tracks scoped service-account access in
+[JRACLOUD-97504](https://jira.atlassian.com/browse/JRACLOUD-97504).
+The supported scoped alternative in this app is a GitHub fine-grained token restricted
+to the relevant repositories with **Pull requests: Read-only** permission.
+
+
 The Development panel is separate from Jira's normal issue response. Options:
 
 1. **Supported GitHub API:** set `GH_REPOSITORIES` to comma-separated `owner/repo` names and
@@ -188,3 +197,10 @@ References: [Supabase keys](https://supabase.com/docs/guides/getting-started/api
 [function secrets](https://supabase.com/docs/guides/functions/secrets),
 [scheduled functions](https://supabase.com/docs/guides/functions/schedule-functions),
 [Jira board API](https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/).
+
+## Visual identity
+
+The interface uses SharinPix's blue `#2045af`, orange `#ff932e`, and Inter/Poppins
+font families from the [company website](https://sharinpix.com/). The company logo is
+served locally from `public/sharinpix-logo.png`; source:
+[SharinPix website logo](https://sharinpix.com/wp-content/uploads/elementor/thumbs/Logo-SharinPix-blue-600x265-1-ramsr9x9xevcgcfu6uurdriswn9dywqsmo70mby1og.png).
