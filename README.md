@@ -4,8 +4,9 @@ SharinPix Salesforce review queue.
 
 GitHub Pages frontend + Supabase database, private admin link, and Jira sync function.
 The team sees the saved order, SP ticket keys, short titles (100 characters maximum), Jira
-links, and GitHub PR links. These fields are intentionally public. Descriptions, comments,
-personal details, code, and integration credentials never enter the public database.
+links, GitHub PR links, urgency, a client-waiting flag, and a short review note. These fields
+are intentionally public. Jira descriptions and comments, code, and integration credentials
+are never copied into the public database.
 
 Drag tickets or use the arrows, click **Save order**, and share the same URL. The team page
 refreshes every 30 seconds. New tickets append after the saved order; tickets leaving REVIEW
@@ -17,14 +18,17 @@ Conflicting edits cannot silently overwrite each other.
 The `sf-review-page` project is already created. Save its **database password** in a
 password manager; it never enters the browser. Admin access uses a private link, not a password.
 
-In **SQL Editor**, run both migrations in filename order:
+For a new project, run all three migrations in **SQL Editor**, in filename order:
 
 1. `supabase/migrations/202609180001_review_queue.sql`
 2. `supabase/migrations/202609180002_private_admin_link.sql`
+3. `supabase/migrations/202609290001_team_review_notes.sql`
 
-They create the public read-only queue and server-only writes. The current project
-`qcklvxtvoymwlbhppefn` already has both applied through the Management API. Do not run them
-again. CLI migration history is not populated by SQL Editor / Management API application;
+They create the public queue, narrowly scoped team edits, and server-only ordering/sync.
+The current project `qcklvxtvoymwlbhppefn` has all three migrations applied; the team-review
+fields were verified on October 1, 2026. Do not rerun these migrations on that project.
+The third enables public link/note editing and preserves existing tickets and saved order.
+CLI migration history is not populated by SQL Editor / Management API application;
 reconcile history before using `supabase db push` against this project.
 
 ## 2. Private admin link — no account or password
@@ -34,8 +38,10 @@ reconcile history before using `supabase db push` against this project.
 
 The key is 32 random bytes, stored as `ADMIN_ACCESS_KEY` in Supabase Edge Function Secrets.
 It never appears in source code or the public build. Anyone holding the private link can
-edit priorities; keep it to yourself. The backend verifies the key on every write and sync.
-`?admin=true` alone grants no access. Public API users cannot call database write functions.
+reorder the queue and sync Jira; keep it to yourself. The backend verifies the key on every
+order change and sync. `?admin=true` alone grants no admin access. Anyone with the public
+team page can edit PR links, urgency, the client-waiting flag, and review notes through
+validated database functions; direct table writes remain blocked.
 
 On this computer the generated key is in `.env.admin` and the ready-to-use links are in
 `.private/admin-links.txt`. Both are excluded from Git and have restricted file permissions.
@@ -132,9 +138,20 @@ The Development panel is separate from Jira's normal issue response. Options:
    endpoint. It is not a supported public API, may reject scoped tokens, and needs testing
    with your account. Failures do not stop ticket sync.
 
-Admins can always **Edit links** on the page. Manual links survive syncs; **Use synced links**
+Anyone can **Add PR link** or **Edit links** on the team page without an admin link. Manual links survive syncs; **Use synced links**
 removes the override. Missing links display “PR link pending.” This version accepts github.com
 PR URLs only.
+
+### Highlight important reviews
+
+Use **Add priority / note** on any ticket to choose **Normal**, **Important** (amber), or
+**Urgent** (red), mark **Client waiting**, and add a note of up to 500 characters explaining
+what is needed. Labels accompany the colors, and the note appears in a highlighted panel.
+The summary counts urgent, important, and client-waiting tickets without changing the saved
+queue order. Anyone with the team link can edit or clear this context. Notes are public;
+Jira comments are not imported. These edits and manual PR links survive Jira syncs while
+the ticket remains in review. Stale saves are rejected and keep the draft visible to copy;
+close the dialog, refresh, and reopen it to edit the latest version.
 
 ## 4. Connect the frontend and publish
 
@@ -156,7 +173,7 @@ local-only ordering controls. For local admin sync, temporarily omit `ALLOWED_OR
 the local origin.
 
 The public Supabase URL and publishable key are already in `public-config.json`. These
-are intended for browser use and do not grant write access. Optional GitHub repository
+are intended for browser use. Database permissions allow only scoped public link and review-context edits. Optional GitHub repository
 variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` can override them.
 
 Push this directory to `main`. Under **Settings → Pages**, choose **GitHub Actions** as the
@@ -182,7 +199,7 @@ sync and warns when it is over 45 minutes old. Inspect Cron and function logs fo
 ## Validation and limits
 
 `npm test` checks private-link authentication, permissions, unauthorized writes, stale edits, atomic saves, sync behavior,
-PR overrides, pagination, and data minimization using PGlite and mocked providers.
+public link/note edits, validation, sync persistence, PR overrides, pagination, and data minimization using PGlite and mocked providers.
 `npm run build` produces `dist/`. `node tests/browser.mjs` tests the browser against a mocked
 Supabase API with Vite running (test environment values are at the top of that file).
 It uses installed Chrome or Playwright Chromium.

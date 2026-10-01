@@ -28,7 +28,7 @@ const demoTickets = [
   ['SP-1002', 'Fix form preview on mobile'],
   ['SP-1003', 'Update document checklist'],
   ['SP-1004', 'Refine album selection'],
-].map(([ticket_key, short_title], i) => ({ ticket_key, short_title, position: i + 1, jira_url: '', pr_urls: [] }));
+].map(([ticket_key, short_title], i) => ({ ticket_key, short_title, position: i + 1, jira_url: '', pr_urls: [], urgency: i === 1 ? 'urgent' : i === 2 ? 'important' : 'normal', client_waiting: i === 1, review_note: i === 1 ? 'Client waiting on this fix. Please review so we can unblock their rollout.' : '' }));
 
 $('#app').innerHTML = `
   <header class="topbar"><div class="brand"><img class="brand-logo" src="./sharinpix-logo.png" alt="SharinPix" width="150" height="66"><span class="brand-divider"></span> <span class="brand-sub">Engineering</span></div><div class="top-actions"><span class="live-dot"></span><span id="view-label">Public view</span><button id="signout" class="button subtle" hidden>Exit admin view</button></div></header>
@@ -37,15 +37,31 @@ $('#app').innerHTML = `
     <section class="heading"><div><h1>Review priorities</h1><p>Your team’s pull requests, in the order that matters.</p></div><button id="share" class="button share-button">Copy team link <span aria-hidden="true">↗</span></button></section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
     <section class="summary" aria-label="Queue overview"><div><span class="summary-label">TICKETS IN REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
+    <div id="attention-summary" class="attention-summary" role="status" hidden></div>
     <section class="queue"><div class="queue-heading"><div><span class="tab-dot"></span><h2>Review queue</h2><span id="badge">0</span></div><button id="reload" class="button subtle">Refresh</button></div>
       <div id="admin-toolbar" hidden><p>Drag rows or use the arrows, then save the order for everyone.</p><div><button id="sync" class="button subtle">Sync Jira</button><button id="discard" class="button subtle" disabled>Discard changes</button><button id="save" class="button primary" disabled>Save order</button></div></div>
+      <p class="team-help">Anyone with the team link can edit PR links, urgency and review notes.</p>
       <div class="table-head"><span>ORDER</span><span>TICKET</span><span>PULL REQUESTS</span><span></span></div>
       <div id="rows" aria-label="Tickets in review order"><div class="empty">Loading the review queue…</div></div>
-      <footer class="queue-footer"><span>Review from top to bottom.</span><span>Jira · SP / REVIEW</span></footer>
+      <footer class="queue-footer"><span>Review in order; check highlighted requests for urgency.</span><span>Jira · SP / REVIEW</span></footer>
     </section>
     <footer class="page-footer"><span>SharinPix · Salesforce engineering</span><span>Ticket details and code remain in Jira and GitHub.</span></footer>
   </main>
   <dialog id="links-dialog"><form id="links-form"><div class="dialog-heading"><h2 id="links-title">PR links</h2><button type="button" class="button subtle" data-close="links-dialog" aria-label="Close">×</button></div><p>Paste one GitHub pull request URL per line. These links stay saved when Jira refreshes.</p><label>Pull request links<textarea id="pr-input" rows="5" placeholder="https://github.com/team/repo/pull/123"></textarea></label><p id="links-error" role="alert"></p><div class="dialog-actions"><button type="button" id="auto-links" class="button">Use synced links</button><button type="submit" class="button primary">Save links</button></div></form></dialog>
+  <dialog id="context-dialog"><form id="context-form">
+    <div class="dialog-heading"><h2 id="context-title">Review priority & note</h2><button type="button" class="button subtle" data-close="context-dialog" aria-label="Close">×</button></div>
+    <p>Help the team see what needs attention. Changes are visible to everyone with the team link.</p>
+    <fieldset class="urgency-options"><legend>Urgency</legend>
+      <label><input type="radio" name="urgency" value="normal" checked><span>Normal</span></label>
+      <label><input type="radio" name="urgency" value="important"><span>Important</span></label>
+      <label><input type="radio" name="urgency" value="urgent"><span>Urgent</span></label>
+    </fieldset>
+    <label class="checkbox-label"><input type="checkbox" id="client-waiting">Client waiting</label>
+    <label>Review note <textarea id="review-note" rows="4" maxlength="500" placeholder="e.g. Client waiting on this fix. Please review before today’s release."></textarea></label>
+    <p class="note-help">Up to 500 characters · Public team note</p>
+    <p id="context-error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" class="button" data-close="context-dialog">Cancel</button><button type="submit" class="button primary">Save priority & note</button></div>
+  </form></dialog>
 `;
 
 function notice(message, error = false) {
@@ -57,11 +73,19 @@ function safeLink(href, kind) {
   return kind === 'jira' ? /^https:\/\/sharinpix\.atlassian\.net\/browse\/SP-\d+$/.test(href)
     : /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/.test(href);
 }
+function urgencyOf(ticket) {
+  return ['important', 'urgent'].includes(ticket.urgency) ? ticket.urgency : 'normal';
+}
 function render() {
   $('#count').textContent = !lastSynced && !tickets.length && !demo ? '—' : String(tickets.length).padStart(2, '0');
   $('#badge').textContent = tickets.length;
   $('#synced').textContent = demo ? 'Sample data' : lastSynced ? new Date(lastSynced).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not synced yet';
-  $('#view-label').textContent = demo ? 'Demo view' : admin ? 'Admin view' : 'Public view';
+  $('#view-label').textContent = demo ? 'Demo view' : admin ? 'Admin view' : 'Team view';
+  const urgent = tickets.filter(t => t.urgency === 'urgent').length;
+  const important = tickets.filter(t => t.urgency === 'important').length;
+  const waiting = tickets.filter(t => t.client_waiting).length;
+  $('#attention-summary').hidden = !urgent && !important && !waiting;
+  $('#attention-summary').textContent = `Needs attention · ${urgent} urgent · ${important} important · ${waiting} client waiting`;
   $('#admin-toolbar').hidden = !admin;
   $('#signout').hidden = !admin || demo;
   $('#save').disabled = !dirty || busy;
@@ -69,10 +93,14 @@ function render() {
   $('#sync').disabled = dirty || busy || demo;
   $('#order-label').textContent = dirty ? 'Unsaved changes' : 'Team priority';
   $('#rows').innerHTML = tickets.length ? tickets.map((t, i) => `
-    <article class="ticket ${i === 0 ? 'first' : ''}" data-key="${escape(t.ticket_key)}" draggable="${admin && !busy}">
+    <article class="ticket ${i === 0 ? 'first' : ''} urgency-${urgencyOf(t)} ${t.client_waiting ? 'client-waiting' : ''}" data-key="${escape(t.ticket_key)}" draggable="${admin && !busy}">
       <div class="rank"><span class="drag-handle" aria-hidden="true">${admin ? '⠿' : ''}</span><span>${String(i + 1).padStart(2, '0')}</span></div>
-      <div class="ticket-info"><div class="ticket-meta">${safeLink(t.jira_url, 'jira') ? `<a href="${escape(t.jira_url)}" target="_blank" rel="noopener noreferrer">${escape(t.ticket_key)} ↗</a>` : `<span>${escape(t.ticket_key)}</span>`}${i === 0 ? '<span class="next-badge">UP NEXT</span>' : ''}</div><h3>${escape(t.short_title)}</h3></div>
-      <div class="pr-links">${t.pr_urls.filter(u => safeLink(u, 'pr')).map((u, n) => `<a class="pr-link" href="${escape(u)}" target="_blank" rel="noopener noreferrer">PR #${escape(u.split('/').pop())} ↗</a>`).join('') || '<span class="muted">PR link pending</span>'}${admin ? `<button class="text-button" data-links="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>Edit links</button>` : ''}</div>
+      <div class="ticket-info"><div class="ticket-meta">${safeLink(t.jira_url, 'jira') ? `<a href="${escape(t.jira_url)}" target="_blank" rel="noopener noreferrer">${escape(t.ticket_key)} ↗</a>` : `<span>${escape(t.ticket_key)}</span>`}${i === 0 ? '<span class="next-badge">UP NEXT</span>' : ''}</div><h3>${escape(t.short_title)}</h3>
+        <div class="review-flags">${urgencyOf(t) !== 'normal' ? `<span class="urgency-badge ${urgencyOf(t)}">${urgencyOf(t) === 'urgent' ? 'Urgent' : 'Important'}</span>` : ''}${t.client_waiting ? '<span class="waiting-badge">Client waiting</span>' : ''}</div>
+        ${t.review_note ? `<div class="review-note"><strong>Review note</strong><p>${escape(t.review_note)}</p></div>` : ''}
+        <button class="text-button context-button" data-context="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.review_note || urgencyOf(t) !== 'normal' || t.client_waiting ? 'Edit priority & note' : 'Add priority / note'}</button>
+      </div>
+      <div class="pr-links">${t.pr_urls.filter(u => safeLink(u, 'pr')).map((u, n) => `<a class="pr-link" href="${escape(u)}" target="_blank" rel="noopener noreferrer">PR #${escape(u.split('/').pop())} ↗</a>`).join('') || '<span class="muted">PR link pending</span>'}<button class="text-button" data-links="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.pr_urls.length ? 'Edit links' : 'Add PR link'}</button></div>
       <div class="move-controls">${admin ? `<button class="move" data-move="-1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} up" ${i === 0 || busy ? 'disabled' : ''}>↑</button><button class="move" data-move="1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} down" ${i === tickets.length - 1 || busy ? 'disabled' : ''}>↓</button>` : ''}</div>
     </article>`).join('') : lastSynced
     ? '<div class="empty"><span class="empty-symbol">✓</span><h3>No tickets waiting</h3><p>No tickets were in the review queue at the last successful sync.</p></div>'
@@ -90,10 +118,10 @@ async function adminCall(action, args = {}) {
   return data;
 }
 async function load() {
-  if (!client || dirty || busy) return;
+  if (!client || dirty || busy || document.querySelector('dialog[open]')) return;
   const { data, error } = await client.rpc('get_queue');
   if (error) { notice('Could not refresh the queue. Check the connection and try again.', true); return; }
-  if (dirty || busy) return;
+  if (dirty || busy || document.querySelector('dialog[open]')) return;
   tickets = data.tickets; revision = data.revision; lastSynced = data.last_synced_at;
   savedOrder = tickets.map(t => t.ticket_key); render();
   if (lastSynced && Date.now() - new Date(lastSynced).getTime() > 45 * 60 * 1000) notice('Jira has not synced recently. This is the last saved queue.');
@@ -107,13 +135,27 @@ $('#rows').addEventListener('click', e => {
   const move = e.target.closest('[data-move]');
   if (move) { const i = tickets.findIndex(t => t.ticket_key === move.dataset.key); reorder(i, i + Number(move.dataset.move)); }
   const links = e.target.closest('[data-links]');
-  if (links && admin) {
+  if (links && !busy) {
     if (dirty) { notice('Save or discard your ordering changes before editing PR links.'); return; }
     const ticket = tickets.find(t => t.ticket_key === links.dataset.links);
     $('#links-form').dataset.key = ticket.ticket_key;
+    $('#links-form').dataset.revision = revision;
     $('#links-title').textContent = `${ticket.ticket_key} · PR links`;
     $('#pr-input').value = ticket.pr_urls.join('\n'); $('#links-error').textContent = '';
     $('#links-dialog').showModal();
+  }
+  const context = e.target.closest('[data-context]');
+  if (context && !busy) {
+    if (dirty) { notice('Save or discard your ordering changes before editing review notes.'); return; }
+    const ticket = tickets.find(t => t.ticket_key === context.dataset.context);
+    $('#context-form').dataset.key = ticket.ticket_key;
+    $('#context-form').dataset.revision = revision;
+    $('#context-title').textContent = `${ticket.ticket_key} · Priority & note`;
+    $(`#context-form input[value="${urgencyOf(ticket)}"]`).checked = true;
+    $('#client-waiting').checked = !!ticket.client_waiting;
+    $('#review-note').value = ticket.review_note || '';
+    $('#context-error').textContent = '';
+    $('#context-dialog').showModal();
   }
 });
 $('#rows').addEventListener('dragstart', e => {
@@ -142,19 +184,47 @@ $('#save').onclick = async () => {
   } catch (error) { notice(error.code === '40001' ? 'The queue changed while you were editing. Discard changes to load the latest queue, then reorder again.' : 'Could not save. Your changes are still here; check your admin access and retry.', true); }
   finally { busy = false; render(); if (!dirty) await load(); }
 };
-async function saveLinks(urls) {
-  busy = true; $('#links-error').textContent = '';
-  $('#links-form').querySelectorAll('button').forEach(b => b.disabled = true);
+async function saveTeamEdit(kind, action, args, success) {
+  if (busy) return;
+  const form = $(`#${kind}-form`);
+  const errorBox = $(`#${kind}-error`);
+  busy = true; errorBox.textContent = '';
+  form.querySelectorAll('button, input, textarea').forEach(el => el.disabled = true);
   try {
-    const issue_key = $('#links-form').dataset.key;
-    if (demo) { tickets.find(t => t.ticket_key === issue_key).pr_urls = urls || []; }
-    else {
-      await adminCall('set_pr_links', { issue_key, urls, expected_revision: revision });
+    const issue_key = form.dataset.key;
+    if (demo) {
+      const ticket = tickets.find(t => t.ticket_key === issue_key);
+      if (kind === 'links') ticket.pr_urls = args.urls || [];
+      else Object.assign(ticket, args);
+    } else {
+      const { error } = await client.rpc(action, { issue_key, ...args, expected_revision: Number(form.dataset.revision) });
+      if (error) throw error;
     }
-    $('#links-dialog').close(); notice(demo ? 'Demo links updated in this preview only.' : 'PR links saved.');
-  } catch { $('#links-error').textContent = 'Could not save links. Close this dialog, refresh the queue, and try again.'; }
-  finally { busy = false; $('#links-form').querySelectorAll('button').forEach(b => b.disabled = false); render(); await load(); }
+    $(`#${kind}-dialog`).close();
+    notice(demo ? 'Demo changes saved in this preview only.' : success);
+  } catch (error) {
+    errorBox.textContent = error.code === '40001'
+      ? 'The queue changed while you were editing. Your input is still here to copy. Close this dialog, refresh, and reopen it before saving again.'
+      : 'Could not save. Your input is still here; check your connection and try again.';
+  } finally {
+    busy = false;
+    form.querySelectorAll('button, input, textarea').forEach(el => el.disabled = false);
+    render(); await load();
+  }
 }
+function saveLinks(urls) {
+  return saveTeamEdit('links', 'set_pr_links', { urls }, 'PR links saved for everyone.');
+}
+$('#context-form').onsubmit = e => {
+  e.preventDefault();
+  const review_note = $('#review-note').value.trim();
+  if (review_note.length > 500) { $('#context-error').textContent = 'Keep the note to 500 characters or fewer.'; return; }
+  saveTeamEdit('context', 'set_review_context', {
+    urgency: $('#context-form input[name="urgency"]:checked').value,
+    client_waiting: $('#client-waiting').checked,
+    review_note,
+  }, 'Priority and note saved for everyone.');
+};
 $('#links-form').onsubmit = e => {
   e.preventDefault(); const urls = [...new Set($('#pr-input').value.split('\n').map(s => s.trim()).filter(Boolean))];
   if (urls.length > 20 || urls.some(u => !safeLink(u, 'pr'))) { $('#links-error').textContent = 'Enter up to 20 valid https://github.com/owner/repo/pull/123 URLs.'; return; }
@@ -181,12 +251,13 @@ $('#share').onclick = async () => {
   try { await navigator.clipboard.writeText(shareUrl.href); notice('Team link copied.'); }
   catch { notice(`Team link: ${shareUrl.href}`); }
 };
-document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $(`#${b.dataset.close}`).close());
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { if (!busy) $(`#${b.dataset.close}`).close(); });
+document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); }));
 $('#signout').onclick = async () => {
   if (dirty && !confirm('Discard your unsaved ordering changes and exit admin view?')) return;
   adminKey = ''; try { sessionStorage.removeItem(adminStorageKey); } catch {}
   history.replaceState(null, '', location.pathname);
-  admin = false; dirty = false; render(); await load(); notice('Public view.');
+  admin = false; dirty = false; render(); await load(); notice('Team view.');
 };
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
