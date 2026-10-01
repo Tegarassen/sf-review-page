@@ -23,6 +23,7 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
     `);
     await db.exec(await readFile(new URL('../supabase/migrations/202609180001_review_queue.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../supabase/migrations/202609180002_private_admin_link.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../supabase/migrations/202609290001_team_review_notes.sql', import.meta.url), 'utf8'));
     const sync = items => db.query('select public.sync_review_queue($1::jsonb)', [JSON.stringify(items)]);
     const snapshot = async () => (await db.query('select public.get_queue() as queue')).rows[0].queue;
     const role = async (name, id = '') => { await db.exec('reset role'); await db.query("select set_config('request.jwt.claim.sub', $1, false)", [id]); await db.exec(`set role ${name}`); };
@@ -69,6 +70,53 @@ test('Database permissions, atomic saves, conflicts, sync and persistent overrid
     await role('anon'); queue = await snapshot();
     assert.deepEqual(queue.tickets.map(t => t.ticket_key), ['SP-2', 'SP-3']);
     assert.deepEqual(queue.tickets[0].pr_urls, ['https://github.com/example/repo/pull/6']);
+    // Public collaboration is limited to links and review context, with revision checks.
+    for (const visitor of ['anon', 'authenticated']) {
+      await role(visitor);
+      queue = await snapshot();
+      const current = queue.revision;
+      const contextArgs = ['SP-2', 'urgent', true, '  Client waiting. Please review today.  ', current];
+      const setContext = args => db.query('select public.set_review_context($1, $2, $3, $4, $5)', args);
+      await assert.rejects(setContext(['SP-2', 'invalid', true, '', current]), /valid urgency/);
+      await assert.rejects(setContext(['SP-2', 'urgent', true, 'x'.repeat(501), current]), /500 characters/);
+      await assert.rejects(setContext(['SP-2', null, true, '', current]), /valid urgency/);
+      await assert.rejects(setContext(['SP-2', 'normal', null, '', current]), /valid urgency/);
+      await assert.rejects(setContext(['SP-2', 'normal', false, null, current]), /valid urgency/);
+      await assert.rejects(setContext(['SP-99', 'normal', false, '', current]), /no longer/);
+      assert.equal((await snapshot()).revision, current);
+      await setContext(contextArgs);
+      await assert.rejects(setContext(contextArgs), /Queue changed/);
+      const highlighted = (await snapshot()).tickets[0];
+      assert.equal(highlighted.urgency, 'urgent');
+      assert.equal(highlighted.client_waiting, true);
+      assert.equal(highlighted.review_note, 'Client waiting. Please review today.');
+      await assert.rejects(db.exec("update public.review_tickets set urgency = 'normal'"), /permission denied/);
+      await assert.rejects(db.exec("delete from public.review_tickets"), /permission denied/);
+      await assert.rejects(sync([]), /permission denied/);
+      await assert.rejects(db.query('select public.save_order($1, $2)', [['SP-2', 'SP-3'], current + 1]), /permission denied/);
+      const setLinks = urls => db.query('select public.set_pr_links($1, $2, $3)', ['SP-2', urls, current + 1]);
+      await assert.rejects(setLinks(['https://example.com/repo/pull/1']), /GitHub/);
+      await assert.rejects(setLinks([null]), /GitHub/);
+      await assert.rejects(setLinks(Array(21).fill('https://github.com/example/repo/pull/7')), /GitHub/);
+      await setLinks(['https://github.com/example/repo/pull/7']);
+      await assert.rejects(setLinks([]), /Queue changed/);
+      await role('service_role');
+      await sync([item(2, ['https://github.com/example/repo/pull/8']), item(3)]);
+      await role(visitor);
+      queue = await snapshot();
+      assert.equal(queue.tickets[0].review_note, highlighted.review_note);
+      assert.equal(queue.tickets[0].urgency, 'urgent');
+      assert.equal(queue.tickets[0].client_waiting, true);
+      assert.deepEqual(queue.tickets[0].pr_urls, ['https://github.com/example/repo/pull/7']);
+      await db.query('select public.set_pr_links($1, $2, $3)', ['SP-2', null, queue.revision]);
+      queue = await snapshot();
+      assert.deepEqual(queue.tickets[0].pr_urls, ['https://github.com/example/repo/pull/8']);
+      await setContext(['SP-2', 'normal', false, '', queue.revision]);
+      queue = await snapshot();
+      assert.equal(queue.tickets[0].urgency, 'normal');
+      assert.equal(queue.tickets[0].client_waiting, false);
+      assert.equal(queue.tickets[0].review_note, '');
+    }
     await role('service_role'); await sync([]);
     await role('anon'); assert.equal((await snapshot()).tickets.length, 0);
   } finally { await db.close(); }

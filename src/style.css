@@ -71,6 +71,24 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.2px; color:
 .ticket:last-child { border-bottom: 0; }
 .ticket.first { background: #fff9f2; }
 .ticket.first::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--orange); }
+.team-help { margin: 0; padding: 14px 24px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.attention-summary { margin: -8px 0 20px; padding: 13px 17px; border: 1px solid #f2c994; border-radius: 8px; background: #fff6e9; color: #7b4208; font-size: 12px; font-weight: 600; line-height: 1.7; }
+.ticket.client-waiting, .ticket.urgency-important { background: #fffaf0; }
+.ticket.urgency-urgent { background: #fff3f2; }
+.ticket.client-waiting::before, .ticket.urgency-important::before, .ticket.urgency-urgent::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #d78a12; }
+.ticket.urgency-urgent::before { background: #ce443c; }
+.review-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.review-flags:empty { display: none; }
+.urgency-badge, .waiting-badge { padding: 4px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; line-height: 1.4; }
+.urgency-badge.urgent { background: #fbd9d6; color: #9b2922; }
+.urgency-badge.important { background: #ffe9bd; color: #794608; }
+.waiting-badge { background: #eee5ff; color: #64419a; }
+.review-note { margin-top: 12px; padding: 11px 13px; border: 1px solid #dde5f3; border-radius: 6px; background: #f6f8ff; }
+.review-note strong { font-size: 10px; color: var(--blue); }
+.review-note p { margin: 5px 0 0; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.urgency-important .review-note, .client-waiting .review-note { background: #fff2d9; border-color: #f1d39a; }
+.urgency-urgent .review-note { background: #ffe5e1; border-color: #edbab3; }
+.context-button { margin-top: 9px; }
 .rank { display: flex; align-items: center; gap: 12px; font-size: 21px; color: #7284a4; font-variant-numeric: tabular-nums; font-weight: 500; }
 .first .rank { color: var(--blue); font-weight: 700; }
 .drag-handle { font-size: 22px; color: #93a3be; width: 12px; cursor: grab; }
@@ -108,7 +126,14 @@ dialog::backdrop { background: #122b6266; backdrop-filter: blur(3px); }
 dialog p { color: var(--muted); font-size: 12px; line-height: 1.7; }
 label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; font-weight: 500; margin: 18px 0; }
 input, textarea { border: 1px solid #d5deef; border-radius: 6px; padding: 11px 12px; background: #f9fafd; resize: vertical; width: 100%; }
-#links-error { color: #b64e3d; }
+#links-error, #context-error { color: #b64e3d; }
+.urgency-options { display: flex; gap: 8px; border: 0; padding: 0; margin: 20px 0; }
+.urgency-options legend { font-size: 12px; font-weight: 500; margin-bottom: 10px; }
+.urgency-options label { flex: 1; flex-direction: row; align-items: center; gap: 6px; margin: 0; padding: 10px 8px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.urgency-options label:has(input:checked) { border-color: var(--blue); background: #edf2ff; color: var(--blue); }
+.urgency-options input, .checkbox-label input { width: 15px; height: 15px; margin: 0; accent-color: var(--blue); flex-shrink: 0; }
+.checkbox-label { flex-direction: row; align-items: center; gap: 10px; }
+.note-help { margin-top: -9px; }
 .dialog-actions { display: flex; justify-content: space-between; gap: 12px; }
 @media (max-width: 700px) {
   .topbar { min-height: 74px; padding: 5px 18px; gap: 10px; flex-wrap: wrap; }
