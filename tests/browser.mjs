@@ -64,7 +64,11 @@ try {
   assert.equal(await page.locator('.review-note p').textContent(), note);
   assert.equal(await page.locator('.review-note script').count(), 0);
   assert.match(await page.locator('#attention-summary').textContent(), /1 urgent.*1 client waiting/);
-  assert.equal(await page.locator('.ticket').first().getAttribute('data-key'), 'SP-1');
+  assert.equal(await page.locator('.ticket').first().getAttribute('data-key'), 'SP-2');
+  assert.equal(await page.locator('.focus-list .ticket').count(), 1);
+  assert.equal(await page.locator('.remaining-list .ticket').getAttribute('data-key'), 'SP-1');
+  assert.equal(await page.locator('.remaining-list .next-badge').count(), 0);
+  assert.deepEqual(queue.tickets.map(t => t.ticket_key), ['SP-1', 'SP-2']);
   await page.reload();
   await page.locator('.ticket.urgency-urgent').waitFor();
   // Another user's edit must not be silently overwritten.
@@ -85,6 +89,20 @@ try {
   await page.locator('#context-dialog').waitFor({ state: 'hidden' });
   await page.locator('.ticket.urgency-urgent').waitFor({ state: 'detached' });
   assert.equal(await page.locator('#attention-summary').isVisible(), false);
+  assert.equal(await page.locator('.focus-list .ticket').count(), 0);
+  assert.equal(await page.locator('.remaining-list .ticket').count(), 2);
+  await page.locator('.focus-empty').waitFor();
+  // A waiting client alone is enough to promote a normal-priority ticket.
+  await page.locator('[data-context="SP-2"]').click();
+  await page.getByLabel('Client waiting', { exact: true }).check();
+  await page.getByRole('button', { name: 'Save priority & note', exact: true }).click();
+  await page.locator('.focus-list .ticket.urgency-normal.client-waiting').waitFor();
+  await page.locator('[data-context="SP-2"]').click();
+  await page.getByLabel('Client waiting', { exact: true }).uncheck();
+  await page.locator('#review-note').fill('Context only; no urgency.');
+  await page.getByRole('button', { name: 'Save priority & note', exact: true }).click();
+  await page.locator('.focus-list .ticket').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.remaining-list .ticket').count(), 2);
   await page.goto(`${base}/?admin=true`);
   await page.getByText('This admin link is invalid or has expired.', { exact: false }).waitFor();
   assert.equal(await page.locator('#admin-toolbar').isVisible(), false);
@@ -108,8 +126,22 @@ try {
   assert.equal(await page.locator('#admin-toolbar').isVisible(), false);
   await page.goto(`${base}/?demo`);
   await page.locator('.ticket').first().waitFor();
-  await page.locator('.ticket').nth(3).dragTo(page.locator('.ticket').first());
-  assert.equal(await page.locator('.ticket').first().getAttribute('data-key'), 'SP-1004');
+  const keys = selector => page.locator(selector).evaluateAll(rows => rows.map(row => row.dataset.key));
+  assert.deepEqual(await keys('.focus-list .ticket'), ['SP-1002', 'SP-1003']);
+  assert.deepEqual(await keys('.remaining-list .ticket'), ['SP-1001', 'SP-1004']);
+  assert.equal(await page.getByRole('button', { name: 'Move SP-1002 up' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Move SP-1003 down' }).isDisabled(), true);
+  await page.locator('.ticket[data-key="SP-1004"]').dragTo(page.locator('.ticket[data-key="SP-1002"]'));
+  assert.deepEqual(await keys('.focus-list .ticket'), ['SP-1002', 'SP-1003']);
+  assert.equal(await page.getByRole('button', { name: 'Save order', exact: true }).isDisabled(), true);
+  await page.locator('.ticket[data-key="SP-1004"]').dragTo(page.locator('.ticket[data-key="SP-1001"]'));
+  assert.deepEqual(await keys('.remaining-list .ticket'), ['SP-1004', 'SP-1001']);
+  await page.getByRole('button', { name: 'Move SP-1003 up' }).click();
+  assert.deepEqual(await keys('.focus-list .ticket'), ['SP-1003', 'SP-1002']);
+  await page.getByRole('button', { name: 'Move SP-1002 up' }).click();
+  assert.deepEqual(await keys('.focus-list .ticket'), ['SP-1002', 'SP-1003']);
+  assert.deepEqual(await keys('.remaining-list .ticket'), ['SP-1004', 'SP-1001']);
+  assert.equal(await page.locator('.ticket').count(), 4);
   mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -125,5 +157,5 @@ try {
   assert.ok(dialogBounds.x >= 0 && dialogBounds.x + dialogBounds.width <= 390);
   await page.screenshot({ path: 'test-results/mobile-editor.png' });
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: public link/context editing, unsafe link rejection, safe note rendering, conflict draft preservation, clearing highlights, private admin link, invalid key rejection, clean team link, save/reload, drag-and-drop, mobile layout.');
+  console.log('Browser checks passed: focus grouping, promotion/demotion, group reordering, public link/context editing, unsafe link rejection, safe note rendering, conflict draft preservation, clearing highlights, private admin link, invalid key rejection, clean team link, save/reload, drag-and-drop, mobile layout.');
 } finally { await browser.close(); }

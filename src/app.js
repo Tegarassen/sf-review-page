@@ -39,11 +39,10 @@ $('#app').innerHTML = `
     <section class="summary" aria-label="Queue overview"><div><span class="summary-label">TICKETS IN REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
     <div id="attention-summary" class="attention-summary" role="status" hidden></div>
     <section class="queue"><div class="queue-heading"><div><span class="tab-dot"></span><h2>Review queue</h2><span id="badge">0</span></div><button id="reload" class="button subtle">Refresh</button></div>
-      <div id="admin-toolbar" hidden><p>Drag rows or use the arrows, then save the order for everyone.</p><div><button id="sync" class="button subtle">Sync Jira</button><button id="discard" class="button subtle" disabled>Discard changes</button><button id="save" class="button primary" disabled>Save order</button></div></div>
+      <div id="admin-toolbar" hidden><p>Reorder tickets within each list, then save the order for everyone.</p><div><button id="sync" class="button subtle">Sync Jira</button><button id="discard" class="button subtle" disabled>Discard changes</button><button id="save" class="button primary" disabled>Save order</button></div></div>
       <p class="team-help">Anyone with the team link can edit PR links, urgency and review notes.</p>
-      <div class="table-head"><span>ORDER</span><span>TICKET</span><span>PULL REQUESTS</span><span></span></div>
-      <div id="rows" aria-label="Tickets in review order"><div class="empty">Loading the review queue…</div></div>
-      <footer class="queue-footer"><span>Review in order; check highlighted requests for urgency.</span><span>Jira · SP / REVIEW</span></footer>
+      <div id="rows" aria-label="Review lists"><div class="empty">Loading the review queue…</div></div>
+      <footer class="queue-footer"><span>Start with Focus now, then pick up the remaining reviews.</span><span>Jira · SP / REVIEW</span></footer>
     </section>
     <footer class="page-footer"><span>SharinPix · Salesforce engineering</span><span>Ticket details and code remain in Jira and GitHub.</span></footer>
   </main>
@@ -76,6 +75,23 @@ function safeLink(href, kind) {
 function urgencyOf(ticket) {
   return ['important', 'urgent'].includes(ticket.urgency) ? ticket.urgency : 'normal';
 }
+function needsFocus(ticket) {
+  return urgencyOf(ticket) !== 'normal' || !!ticket.client_waiting;
+}
+function renderTicket(t, i, group, focus, offset = 0) {
+  return `
+    <article class="ticket ${focus && i === 0 ? 'first' : ''} urgency-${urgencyOf(t)} ${t.client_waiting ? 'client-waiting' : ''}" data-key="${escape(t.ticket_key)}" draggable="${admin && !busy}">
+      <div class="rank"><span class="drag-handle" aria-hidden="true">${admin ? '⠿' : ''}</span><span>${String(offset + i + 1).padStart(2, '0')}</span></div>
+      <div class="ticket-info"><div class="ticket-meta">${safeLink(t.jira_url, 'jira') ? `<a href="${escape(t.jira_url)}" target="_blank" rel="noopener noreferrer">${escape(t.ticket_key)} ↗</a>` : `<span>${escape(t.ticket_key)}</span>`}${focus && i === 0 ? '<span class="next-badge">UP NEXT</span>' : ''}</div><h3>${escape(t.short_title)}</h3>
+        <div class="review-flags">${urgencyOf(t) !== 'normal' ? `<span class="urgency-badge ${urgencyOf(t)}">${urgencyOf(t) === 'urgent' ? 'Urgent' : 'Important'}</span>` : ''}${t.client_waiting ? '<span class="waiting-badge">Client waiting</span>' : ''}</div>
+        ${t.review_note ? `<div class="review-note"><strong>Review note</strong><p>${escape(t.review_note)}</p></div>` : ''}
+        <button class="text-button context-button" data-context="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.review_note || urgencyOf(t) !== 'normal' || t.client_waiting ? 'Edit priority & note' : 'Add priority / note'}</button>
+      </div>
+      <div class="pr-links">${t.pr_urls.filter(u => safeLink(u, 'pr')).map((u, n) => `<a class="pr-link" href="${escape(u)}" target="_blank" rel="noopener noreferrer">PR #${escape(u.split('/').pop())} ↗</a>`).join('') || '<span class="muted">PR link pending</span>'}<button class="text-button" data-links="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.pr_urls.length ? 'Edit links' : 'Add PR link'}</button></div>
+      <div class="move-controls">${admin ? `<button class="move" data-move="${escape(group[i - 1]?.ticket_key || '')}" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} up" ${i === 0 || busy ? 'disabled' : ''}>↑</button><button class="move" data-move="${escape(group[i + 1]?.ticket_key || '')}" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} down" ${i === group.length - 1 || busy ? 'disabled' : ''}>↓</button>` : ''}</div>
+    </article>`;
+}
+const tableHead = '<div class="table-head"><span>ORDER</span><span>TICKET</span><span>PULL REQUESTS</span><span></span></div>';
 function render() {
   $('#count').textContent = !lastSynced && !tickets.length && !demo ? '—' : String(tickets.length).padStart(2, '0');
   $('#badge').textContent = tickets.length;
@@ -91,18 +107,18 @@ function render() {
   $('#save').disabled = !dirty || busy;
   $('#discard').disabled = !dirty || busy;
   $('#sync').disabled = dirty || busy || demo;
-  $('#order-label').textContent = dirty ? 'Unsaved changes' : 'Team priority';
-  $('#rows').innerHTML = tickets.length ? tickets.map((t, i) => `
-    <article class="ticket ${i === 0 ? 'first' : ''} urgency-${urgencyOf(t)} ${t.client_waiting ? 'client-waiting' : ''}" data-key="${escape(t.ticket_key)}" draggable="${admin && !busy}">
-      <div class="rank"><span class="drag-handle" aria-hidden="true">${admin ? '⠿' : ''}</span><span>${String(i + 1).padStart(2, '0')}</span></div>
-      <div class="ticket-info"><div class="ticket-meta">${safeLink(t.jira_url, 'jira') ? `<a href="${escape(t.jira_url)}" target="_blank" rel="noopener noreferrer">${escape(t.ticket_key)} ↗</a>` : `<span>${escape(t.ticket_key)}</span>`}${i === 0 ? '<span class="next-badge">UP NEXT</span>' : ''}</div><h3>${escape(t.short_title)}</h3>
-        <div class="review-flags">${urgencyOf(t) !== 'normal' ? `<span class="urgency-badge ${urgencyOf(t)}">${urgencyOf(t) === 'urgent' ? 'Urgent' : 'Important'}</span>` : ''}${t.client_waiting ? '<span class="waiting-badge">Client waiting</span>' : ''}</div>
-        ${t.review_note ? `<div class="review-note"><strong>Review note</strong><p>${escape(t.review_note)}</p></div>` : ''}
-        <button class="text-button context-button" data-context="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.review_note || urgencyOf(t) !== 'normal' || t.client_waiting ? 'Edit priority & note' : 'Add priority / note'}</button>
-      </div>
-      <div class="pr-links">${t.pr_urls.filter(u => safeLink(u, 'pr')).map((u, n) => `<a class="pr-link" href="${escape(u)}" target="_blank" rel="noopener noreferrer">PR #${escape(u.split('/').pop())} ↗</a>`).join('') || '<span class="muted">PR link pending</span>'}<button class="text-button" data-links="${escape(t.ticket_key)}" ${busy ? 'disabled' : ''}>${t.pr_urls.length ? 'Edit links' : 'Add PR link'}</button></div>
-      <div class="move-controls">${admin ? `<button class="move" data-move="-1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} up" ${i === 0 || busy ? 'disabled' : ''}>↑</button><button class="move" data-move="1" data-key="${escape(t.ticket_key)}" aria-label="Move ${escape(t.ticket_key)} down" ${i === tickets.length - 1 || busy ? 'disabled' : ''}>↓</button>` : ''}</div>
-    </article>`).join('') : lastSynced
+  $('#order-label').textContent = dirty ? 'Unsaved changes' : 'Focus first';
+  const focus = tickets.filter(needsFocus);
+  const remaining = tickets.filter(t => !needsFocus(t));
+  $('#rows').innerHTML = tickets.length ? `
+    <section class="focus-list" aria-labelledby="focus-title">
+      <div class="list-heading"><div><span class="list-kicker">PRIORITY LIST</span><h2 id="focus-title">Focus now <span class="list-count">${focus.length}</span></h2><p>Urgent, important, or waiting on us. Start here.</p></div></div>
+      ${focus.length ? tableHead + focus.map((t, i) => renderTicket(t, i, focus, true)).join('') : '<div class="focus-empty">No priority reviews flagged. Mark a ticket Important, Urgent, or Client waiting to bring it here.</div>'}
+    </section>
+    ${remaining.length ? `<section class="remaining-list" aria-labelledby="remaining-title">
+      <div class="list-heading"><div><h2 id="remaining-title">Everything else <span class="list-count">${remaining.length}</span></h2><p>No urgency flagged. Pick these up after the focus list.</p></div></div>
+      ${tableHead}${remaining.map((t, i) => renderTicket(t, i, remaining, false, focus.length)).join('')}
+    </section>` : ''}` : lastSynced
     ? '<div class="empty"><span class="empty-symbol">✓</span><h3>No tickets waiting</h3><p>No tickets were in the review queue at the last successful sync.</p></div>'
     : `<div class="empty"><h3>Jira hasn’t synced yet</h3><p>${admin ? 'Use Sync Jira above to load the review queue.' : 'The queue will appear after the admin syncs Jira. To sync or change priorities, open your private admin link.'}</p></div>`;
 }
@@ -128,12 +144,15 @@ async function load() {
 }
 function reorder(from, to) {
   if (!admin || busy || from === to || from < 0 || to < 0 || to >= tickets.length) return;
+  if (needsFocus(tickets[from]) !== needsFocus(tickets[to])) {
+    notice('To move a ticket between lists, edit its urgency or Client waiting flag.'); return;
+  }
   tickets.splice(to, 0, tickets.splice(from, 1)[0]);
   dirty = tickets.some((t, i) => t.ticket_key !== savedOrder[i]); render();
 }
 $('#rows').addEventListener('click', e => {
   const move = e.target.closest('[data-move]');
-  if (move) { const i = tickets.findIndex(t => t.ticket_key === move.dataset.key); reorder(i, i + Number(move.dataset.move)); }
+  if (move) { const i = tickets.findIndex(t => t.ticket_key === move.dataset.key); reorder(i, tickets.findIndex(t => t.ticket_key === move.dataset.move)); }
   const links = e.target.closest('[data-links]');
   if (links && !busy) {
     if (dirty) { notice('Save or discard your ordering changes before editing PR links.'); return; }

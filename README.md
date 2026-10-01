@@ -147,8 +147,10 @@ PR URLs only.
 Use **Add priority / note** on any ticket to choose **Normal**, **Important** (amber), or
 **Urgent** (red), mark **Client waiting**, and add a note of up to 500 characters explaining
 what is needed. Labels accompany the colors, and the note appears in a highlighted panel.
-The summary counts urgent, important, and client-waiting tickets without changing the saved
-queue order. Anyone with the team link can edit or clear this context. Notes are public;
+The **Focus now** list puts urgent, important, and client-waiting tickets first.
+**Everything else** appears in a quieter section below. Saved order is preserved within
+each list; admins can drag or use arrows to reorder within a list. Change urgency or the
+client-waiting flag to move a ticket between lists. A note alone does not add it to Focus now. Anyone with the team link can edit or clear this context. Notes are public;
 Jira comments are not imported. These edits and manual PR links survive Jira syncs while
 the ticket remains in review. Stale saves are rejected and keep the draft visible to copy;
 close the dialog, refresh, and reopen it to edit the latest version.

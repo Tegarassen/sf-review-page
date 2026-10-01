@@ -89,6 +89,19 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.2px; color:
 .urgency-important .review-note, .client-waiting .review-note { background: #fff2d9; border-color: #f1d39a; }
 .urgency-urgent .review-note { background: #ffe5e1; border-color: #edbab3; }
 .context-button { margin-top: 9px; }
+.list-heading { padding: 22px 24px; }
+.list-heading h2 { display: flex; align-items: center; gap: 9px; font-size: 18px; }
+.list-heading p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.list-kicker { display: block; margin-bottom: 8px; color: var(--blue); font-size: 9px; font-weight: 700; letter-spacing: 1px; }
+.list-count { padding: 3px 7px; border-radius: 5px; font-size: 11px; background: #eaf0ff; color: var(--blue); }
+.focus-list > .list-heading { background: #f1f5ff; border-top: 3px solid var(--blue); }
+.focus-empty { padding: 20px 24px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.remaining-list { border-top: 12px solid #f9fafd; }
+.remaining-list .list-heading { border-top: 1px solid var(--line); background: #fcfdff; }
+.remaining-list .list-heading h2 { color: #596780; font-size: 15px; }
+.remaining-list .list-count { color: #596780; background: #eef1f6; }
+.remaining-list .ticket { background: #fcfdff; }
+.remaining-list .rank { color: #8290a5; }
 .rank { display: flex; align-items: center; gap: 12px; font-size: 21px; color: #7284a4; font-variant-numeric: tabular-nums; font-weight: 500; }
 .first .rank { color: var(--blue); font-weight: 700; }
 .drag-handle { font-size: 22px; color: #93a3be; width: 12px; cursor: grab; }
@@ -161,6 +174,7 @@ input, textarea { border: 1px solid #d5deef; border-radius: 6px; padding: 11px 1
   .ticket-info { padding: 12px 0; }
   .ticket-meta { gap: 7px; flex-wrap: wrap; font-size: 10px; }
   .queue-heading { padding: 16px; }
+  .list-heading, .focus-empty { padding: 18px 16px; }
   .queue-footer { padding: 15px; font-size: 9px; }
   .page-footer { flex-direction: column; gap: 5px; }
   #admin-toolbar { padding: 14px; flex-direction: column; align-items: flex-start; }
