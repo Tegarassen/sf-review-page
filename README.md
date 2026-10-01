@@ -8,8 +8,10 @@ links, GitHub PR links, urgency, a client-waiting flag, and a short review note.
 are intentionally public. Jira descriptions and comments, code, and integration credentials
 are never copied into the public database.
 
-Drag tickets or use the arrows, click **Save order**, and share the same URL. The team page
-refreshes every 30 seconds. New tickets append after the saved order; tickets leaving REVIEW
+Drag tickets or use the arrows, click **Save order**, and share the same URL. The overview
+(ticket count, queue status, and last Jira sync) sits below the review list to keep the PRs
+in focus. The team page refreshes every 30 seconds. New tickets append after the saved order;
+tickets leaving REVIEW
 disappear on successful sync. New tickets initially follow Jira priority and creation time.
 Conflicting edits cannot silently overwrite each other.
 

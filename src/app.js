@@ -36,8 +36,6 @@ $('#app').innerHTML = `
     <div class="eyebrow">SALESFORCE TEAM <span>CODE REVIEW</span></div>
     <section class="heading"><div><h1>Review priorities</h1><p>Your team’s pull requests, in the order that matters.</p></div><button id="share" class="button share-button">Copy team link <span aria-hidden="true">↗</span></button></section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
-    <section class="summary" aria-label="Queue overview"><div><span class="summary-label">TICKETS IN REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
-    <div id="attention-summary" class="attention-summary" role="status" hidden></div>
     <section class="queue"><div class="queue-heading"><div><span class="tab-dot"></span><h2>Review queue</h2><span id="badge">0</span></div><button id="reload" class="button subtle">Refresh</button></div>
       <div id="admin-toolbar" hidden><p>Drag rows or use the arrows, then save the order for everyone.</p><div><button id="sync" class="button subtle">Sync Jira</button><button id="discard" class="button subtle" disabled>Discard changes</button><button id="save" class="button primary" disabled>Save order</button></div></div>
       <p class="team-help">Anyone with the team link can edit PR links, urgency and review notes.</p>
@@ -45,6 +43,8 @@ $('#app').innerHTML = `
       <div id="rows" aria-label="Tickets in review order"><div class="empty">Loading the review queue…</div></div>
       <footer class="queue-footer"><span>Review in order; check highlighted requests for urgency.</span><span>Jira · SP / REVIEW</span></footer>
     </section>
+    <section class="summary" aria-label="Queue overview"><div><span class="summary-label">TICKETS IN REVIEW</span><strong id="count">—</strong></div><div><span class="summary-label">QUEUE ORDER</span><strong class="summary-text" id="order-label">Team priority</strong></div><div><span class="summary-label">LAST JIRA SYNC</span><strong class="summary-text" id="synced">Not synced yet</strong></div></section>
+    <div id="attention-summary" class="attention-summary" role="status" hidden></div>
     <footer class="page-footer"><span>SharinPix · Salesforce engineering</span><span>Ticket details and code remain in Jira and GitHub.</span></footer>
   </main>
   <dialog id="links-dialog"><form id="links-form"><div class="dialog-heading"><h2 id="links-title">PR links</h2><button type="button" class="button subtle" data-close="links-dialog" aria-label="Close">×</button></div><p>Paste one GitHub pull request URL per line. These links stay saved when Jira refreshes.</p><label>Pull request links<textarea id="pr-input" rows="5" placeholder="https://github.com/team/repo/pull/123"></textarea></label><p id="links-error" role="alert"></p><div class="dialog-actions"><button type="button" id="auto-links" class="button">Use synced links</button><button type="submit" class="button primary">Save links</button></div></form></dialog>

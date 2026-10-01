@@ -110,10 +110,18 @@ try {
   await page.locator('.ticket').first().waitFor();
   await page.locator('.ticket').nth(3).dragTo(page.locator('.ticket').first());
   assert.equal(await page.locator('.ticket').first().getAttribute('data-key'), 'SP-1004');
+  const assertOverviewBelowQueue = async () => {
+    const queueBounds = await page.locator('.queue').boundingBox();
+    const overviewBounds = await page.locator('.summary').boundingBox();
+    assert.ok(overviewBounds.y >= queueBounds.y + queueBounds.height);
+    assert.equal(await page.locator('.focus-list, .remaining-list').count(), 0);
+  };
+  await assertOverviewBelowQueue();
   mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await assertOverviewBelowQueue();
   await page.locator('.ticket.urgency-urgent').scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/mobile.png' });
   await page.getByRole('button', { name: 'Save order', exact: true }).click();
@@ -125,5 +133,5 @@ try {
   assert.ok(dialogBounds.x >= 0 && dialogBounds.x + dialogBounds.width <= 390);
   await page.screenshot({ path: 'test-results/mobile-editor.png' });
   assert.deepEqual(errors, []);
-  console.log('Browser checks passed: public link/context editing, unsafe link rejection, safe note rendering, conflict draft preservation, clearing highlights, private admin link, invalid key rejection, clean team link, save/reload, drag-and-drop, mobile layout.');
+  console.log('Browser checks passed: overview below queue on desktop/mobile, public link/context editing, unsafe link rejection, safe note rendering, conflict draft preservation, clearing highlights, private admin link, invalid key rejection, clean team link, save/reload, drag-and-drop, mobile layout.');
 } finally { await browser.close(); }
